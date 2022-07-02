@@ -1,0 +1,222 @@
+@font-face {
+    font-family: "Roboto";
+    font-style: normal;
+    font-weight: normal;
+    src: url("../font/Roboto-Regular.ttf") format("truetype");
+}
+
+@font-face {
+    font-family: "Roboto";
+    font-style: italic;
+    font-weight: normal;
+    src: url("../font/Roboto-Italic.ttf") format("truetype");
+}
+
+@font-face {
+    font-family: "Roboto";
+    font-style: normal;
+    font-weight: bold;
+    src: url("../font/Roboto-Bold.ttf") format("truetype");
+}
+
+@font-face {
+    font-family: "Roboto";
+    font-style: italic;
+    font-weight: bold;
+    src: url("../font/Roboto-BoldItalic.ttf") format("truetype");
+}
+
+@font-face {
+    font-family: "Roboto Mono";
+    font-style: normal;
+    font-weight: normal;
+    src: url("../font/RobotoMono-Regular.ttf") format("truetype");
+}
+
+@font-face {
+    font-family: "Roboto Mono";
+    font-style: normal;
+    font-weight: bold;
+    src: url("../font/RobotoMono-Bold.ttf") format("truetype");
+}
+
+* {
+    --primary-bg-color: #2d2d2d;
+    --primary-border-color: #975656;
+    box-sizing: border-box;
+}
+
+#module_content {
+    font-size: 15px;
+    margin: 0 auto;
+    max-width: 1200px;
+    padding: 10px;
+}
+
+#module_content > section:first-child {
+    font-size: 16px;
+    margin-bottom: 40px;
+    margin-top: 25px;
+}
+
+.content_wrapper {
+    color: white;
+    font-family: "Roboto", "Arial";
+}
+
+.content_wrapper code {
+    font-family: "Roboto Mono", "Courier New";
+}
+
+.code_lines {
+    padding-left: 0;
+}
+
+.code_lines li {
+    list-style-type: none;
+    margin-bottom: 0;
+    white-space: pre-wrap;
+}
+
+.code_listing {
+    background-color: #1c1c1c;
+    border-bottom-left-radius: 5px;
+    border-bottom-right-radius: 5px;
+    padding: 10px;
+}
+
+.ddoc_examples .para {
+    background-color: #644b4b;
+    border-top-left-radius: 5px;
+    border-top-right-radius: 5px;
+    margin-bottom: 0;
+    padding: 10px;
+}
+
+.ddoc_examples .para:before {
+    content: "Example: ";
+}
+
+.ddoc_sections > .ddoc_examples h4 {
+    display: none;
+}
+
+.ddoc_member {
+    margin-bottom: 10px;
+}
+
+.ddoc_member .ddoc_decl {
+    margin-left: 20px;
+}
+
+.ddoc_member .ddoc_member_header {
+    border-bottom:var(--primary-border-color) solid 6px;
+}
+
+.ddoc_decl > .section > .declaration > h4, .ddoc_description > h4 {
+    display: none;
+}
+
+.ddoc_member .ddoc_member_header .ddoc_header_anchor a {
+    background-color: var(--primary-border-color);
+    border-top-left-radius: 5px;
+    border-top-right-radius: 5px;
+    color: inherit;
+    font-size: large;
+    font-weight: bold;
+    padding: 5px;
+    text-decoration: none;
+}
+
+.ddoc_member .ddoc_member_header .ddoc_header_anchor a > code {
+    font-family: "Roboto", "Arial";
+}
+
+.ddoc_members ul {
+    list-style-type: none;
+}
+
+.ddoc_module_members ul {
+    list-style-type: none;
+    padding-left: 0;
+}
+
+.ddoc_param_row td {
+    padding-bottom: 0;
+    padding-top: 0;
+}
+
+.ddoc_param_row td:first-child {
+    padding-right: 10px;
+}
+
+.ddoc_param_row td:first-child code {
+    background-color: #1c1c1c;
+    border-radius: 5px;
+    display: inline-block;
+    padding: 10px;
+}
+
+.ddoc_param_row td:first-child code em {
+    font-style: normal;
+}
+
+.ddoc_param_row td:first-child code em code {
+    font-style: normal;
+    padding: 0;
+}
+
+.ddoc_param_row td:nth-child(2) {
+    padding-left: 10px;
+}
+
+a {
+    color: inherit;
+    padding-bottom: 2px;
+    text-decoration: none;
+    transition-duration: 150ms;
+    transition-property: color;
+}
+
+a:hover {
+    color: #a06347;
+}
+
+.declaration .dlang .para {
+    background-color: #1c1c1c;
+    border-radius: 5px;
+    overflow-wrap: break-word;
+    padding: 10px;
+}
+
+.module_name {
+    background-color: var(--primary-border-color);
+    border-bottom: #713b3b solid;
+    left: 0;
+    margin: 0;
+    padding: 10px;
+    text-align: center;
+    top: 0;
+    width: 100%;
+}
+
+body {
+    background-color: var(--primary-bg-color);
+    margin: 0;
+}
+
+.comment {
+    color: rgba(0, 131, 18, 1);
+}
+
+.keyword {
+    color: rgb(202, 191, 140);
+}
+
+.string_literal {
+    color: rgb(255, 95, 95);
+}
+
+.psymbol {
+    color: rgb(172, 113, 113);
+}

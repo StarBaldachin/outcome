@@ -1,0 +1,16 @@
+*.exe
+*.lst
+*.o
+*.obj
+.dub
+/outcome
+__dummy.html
+docs.json
+docs/*.html
+docs/res/font
+outcome.a
+outcome.dll
+outcome.dylib
+outcome.lib
+outcome.so
+outcome-test-*

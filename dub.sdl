@@ -1,0 +1,18 @@
+authors     "StarCanopy"
+copyright   "Copyright © 2022, StarCanopy"
+description "A result type built upon std.sumtype."
+dflags      "--dip1000" "--preview=in"
+license     "MIT"
+name        "outcome"
+targetPath  "out"
+targetType  "library"
+
+/**
+ * After running ddoc, the embedded styles within the resultant HTML pages are replaced with links
+ * to a custom stylesheet. Requires sh and sed.
+ */
+buildType "pretty-docs" {
+    buildOptions "syntaxOnly"
+    dflags "-c" "-Dddocs"
+    postBuildCommands "sh -c 'tool/replace-docs-style.sh'"
+}
