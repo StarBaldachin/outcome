@@ -93,9 +93,6 @@ template isOutcome(Type) {
 }
 
 /+++/
-alias andEnsure(alias pred, alias onErr) = andThen!(ensure!(pred, onErr));
-
-/+++/
 template andThen(alias fun) {
 	/+++/
 	auto andThen(Outcome_)(auto ref Outcome_ outcome)
@@ -198,9 +195,12 @@ template andThen(alias fun) {
 }
 
 /+++/
-template andWhen(alias pred, alias onTrue, alias onFalse) {
+alias andThenEnsure(alias pred, alias onErr) = andThen!(ensure!(pred, onErr));
+
+/+++/
+template andThenIf(alias pred, alias onTrue, alias onFalse) {
 	/+++/
-	auto andWhen(Outcome_)(auto ref Outcome_ outcome)
+	auto andThenIf(Outcome_)(auto ref Outcome_ outcome)
 	if (isOutcome!Outcome_) {
 		alias ThenOutcomeOnTrue = typeof(andThen!onTrue(outcome));
 		alias ThenOutcomeOnFalse = typeof(andThen!onFalse(outcome));
@@ -208,7 +208,7 @@ template andWhen(alias pred, alias onTrue, alias onFalse) {
 		import std.functional: pipe;
 		import std.meta: NoDuplicates;
 
-		// The positive type of andWhen's outcome will be the SumType of the handlers' positive
+		// The positive type of andThenIf's outcome will be the SumType of the handlers' positive
 		// types.
 		static if (!is(ThenOutcomeOnTrue.Types[0] == ThenOutcomeOnFalse.Types[0])) {
 			alias EitherOutcome = Outcome!(
@@ -265,7 +265,7 @@ template andWhen(alias pred, alias onTrue, alias onFalse) {
 
 	assert(
 		FileOutcome(File())
-			.andWhen!(
+			.andThenIf!(
 				() => countBytesNotLines,
 				countBytes,
 				countLines
@@ -282,7 +282,7 @@ template andWhen(alias pred, alias onTrue, alias onFalse) {
 
 	assert(
 		FileOutcome(File())
-			.andWhen!(
+			.andThenIf!(
 				() => countBytesNotLines,
 				countBytes,
 				countLines
@@ -315,7 +315,7 @@ template andWhen(alias pred, alias onTrue, alias onFalse) {
 
 	assert(
 		FileOutcome(File())
-			.andWhen!(
+			.andThenIf!(
 				file => readMagicNumber!`PK\x03\x04`(file) == `PK\x03\x04`,
 				processZipFile!false,
 				file => "Not a zip file"
@@ -334,7 +334,7 @@ template andWhen(alias pred, alias onTrue, alias onFalse) {
 
 	assert(
 		FileOutcome(File())
-			.andWhen!(
+			.andThenIf!(
 				file => readMagicNumber!`PK\x03\x04`(file) == `PK\x03\x04`,
 				processZipFile!true,
 				file => "Not a zip file"
@@ -353,7 +353,7 @@ template andWhen(alias pred, alias onTrue, alias onFalse) {
 
 	assert(
 		FileOutcome(File())
-			.andWhen!(
+			.andThenIf!(
 				file => readMagicNumber!`7`(file) == `PK\x03\x04`,
 				processZipFile!false,
 				file => "Not a zip file"
