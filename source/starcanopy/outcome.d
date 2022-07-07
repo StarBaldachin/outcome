@@ -38,8 +38,8 @@ struct None {}
  + A result type
  +
  + Params:
- +	Value = The non-error type that may be held.
- +	Errs  = The error types that may be held. There must be at least one.
+ +	Value = The positive type that may be held.
+ +	Errs  = The negative types that may be held. There must be at least one.
  +/
 template Outcome(Value, Errs...)
 if (Errs.length > 0) {
@@ -53,7 +53,7 @@ struct OutcomeMarker {}
 
 /++
  + Resolves to the types an `Outcome` may hold, where the first element of the alias sequence is the
- + non-error type, and the rest are the error types.
+ + positive type, and the rest are the negative types.
  +
  + This template ignores the `OutcomeMarker`, resolving to just the types specified by the user.
  +/
@@ -90,180 +90,6 @@ template isOutcome(Type) {
 
 	// Every Outcome is a SumType, but the reverse is not true.
 	static assert(!isOutcome!SumType_);
-}
-
-/+++/
-template andEither(alias pred, alias onTrue, alias onFalse) {
-	/+++/
-	auto andEither(Outcome_)(auto ref Outcome_ outcome)
-	if (isOutcome!Outcome_) {
-		alias ThenOutcomeOnTrue = typeof(andThen!onTrue(outcome));
-		alias ThenOutcomeOnFalse = typeof(andThen!onFalse(outcome));
-
-		import std.functional: pipe;
-		import std.meta: NoDuplicates;
-
-		// The non-error type of andEither's outcome will be the SumType of the handlers' non-error
-		// types.
-		static if (!is(ThenOutcomeOnTrue.Types[0] == ThenOutcomeOnFalse.Types[0])) {
-			alias EitherOutcome = Outcome!(
-				SumType!(ThenOutcomeOnTrue.Types[0], ThenOutcomeOnFalse.Types[0]),
-				NoDuplicates!(ThenOutcomeOnTrue.Types[1..$-1], ThenOutcomeOnFalse.Types[1..$-1])
-			);
-
-			alias eitherOutcome = handle!(
-				pipe!(EitherOutcome.Types[0], EitherOutcome), EitherOutcome
-			);
-		}
-
-		else {
-			alias EitherOutcome = Outcome!(
-				ThenOutcomeOnTrue.Types[0],
-				NoDuplicates!(ThenOutcomeOnTrue.Types[1..$-1], ThenOutcomeOnFalse.Types[1..$-1])
-			);
-
-			alias eitherOutcome = matchWith!EitherOutcome;
-		}
-
-		// Obviate binding since pred doesn't take any arguments.
-		static if (is(typeof(pred()))) {
-			return pred()
-				? pipe!(andThen!onTrue, eitherOutcome)(outcome)
-				: pipe!(andThen!onFalse, eitherOutcome)(outcome);
-		}
-
-		else {
-			return outcome
-				.andThen!pred
-				.handle!(
-					predResult => predResult
-						? pipe!(andThen!onTrue, eitherOutcome)(outcome)
-						: pipe!(andThen!onFalse, eitherOutcome)(outcome),
-					EitherOutcome
-				);
-		}
-	}
-}
-
-/+++/
-@nogc nothrow pure @safe unittest {
-	static struct File {}
-	static struct FileAccessErr {}
-	static struct FileNotFoundErr {}
-
-	alias FileOutcome = Outcome!(File, FileAccessErr, FileNotFoundErr);
-
-	static int countBytes(in File file) { return 32; }
-	static int countLines(in File file) { return 16; }
-
-	auto countBytesNotLines = true;
-
-	assert(
-		FileOutcome(File())
-			.andEither!(
-				() => countBytesNotLines,
-				countBytes,
-				countLines
-			)
-			.matchWith!(
-				(uint n) => n,
-				(FileAccessErr err) => -1,
-				(FileNotFoundErr err) => -2
-			)
-			== 32
-	);
-
-	countBytesNotLines = false;
-
-	assert(
-		FileOutcome(File())
-			.andEither!(
-				() => countBytesNotLines,
-				countBytes,
-				countLines
-			)
-			.matchWith!(
-				(uint n) => n,
-				(FileAccessErr err) => -1,
-				(FileNotFoundErr err) => -2
-			)
-			== 16
-	);
-}
-
-/+++/
-@nogc nothrow pure @safe unittest {
-	static struct File {}
-	static struct FileAccessErr {}
-	static struct FileNotFoundErr {}
-	static struct ProcessingErr {}
-
-	alias FileOutcome = Outcome!(File, FileAccessErr, FileNotFoundErr);
-
-	static Outcome!(ubyte[], ProcessingErr) processZipFile(bool fail)(in File file) {
-		return fail ? typeof(return)(ProcessingErr()) : typeof(return)(cast(ubyte[])null);
-	}
-
-	static string readMagicNumber(string magicNumber)(in File file) { return magicNumber; }
-
-	import std.sumtype: match, SumType;
-
-	assert(
-		FileOutcome(File())
-			.andEither!(
-				file => readMagicNumber!`PK\x03\x04`(file) == `PK\x03\x04`,
-				processZipFile!false,
-				file => "Not a zip file"
-			)
-			.handle!(
-				match!(
-					(ubyte[] data) => 0,
-					(string errMsg) => 1
-				),
-				(FileAccessErr err) => 2,
-				(FileNotFoundErr err) => 3,
-				(ProcessingErr err) => 4
-			)
-			== 0
-	);
-
-	assert(
-		FileOutcome(File())
-			.andEither!(
-				file => readMagicNumber!`PK\x03\x04`(file) == `PK\x03\x04`,
-				processZipFile!true,
-				file => "Not a zip file"
-			)
-			.handle!(
-				match!(
-					(ubyte[] data) => 0,
-					(string errMsg) => 1
-				),
-				(FileAccessErr err) => 2,
-				(FileNotFoundErr err) => 3,
-				(ProcessingErr err) => 4
-			)
-			== 4
-	);
-
-	assert(
-		FileOutcome(File())
-			.andEither!(
-				file => readMagicNumber!`7`(file) == `PK\x03\x04`,
-				processZipFile!false,
-				file => "Not a zip file"
-			)
-			.handle!(
-				match!(
-					(ubyte[] data) => 0,
-					(string errMsg) => 1
-				),
-				(FileAccessErr err) => 2,
-				(FileNotFoundErr err) => 3,
-				(ProcessingErr err) => 4
-			)
-			== 1
-	);
 }
 
 /+++/
@@ -372,6 +198,180 @@ template andThen(alias fun) {
 }
 
 /+++/
+template andWhen(alias pred, alias onTrue, alias onFalse) {
+	/+++/
+	auto andWhen(Outcome_)(auto ref Outcome_ outcome)
+	if (isOutcome!Outcome_) {
+		alias ThenOutcomeOnTrue = typeof(andThen!onTrue(outcome));
+		alias ThenOutcomeOnFalse = typeof(andThen!onFalse(outcome));
+
+		import std.functional: pipe;
+		import std.meta: NoDuplicates;
+
+		// The positive type of andWhen's outcome will be the SumType of the handlers' positive
+		// types.
+		static if (!is(ThenOutcomeOnTrue.Types[0] == ThenOutcomeOnFalse.Types[0])) {
+			alias EitherOutcome = Outcome!(
+				SumType!(ThenOutcomeOnTrue.Types[0], ThenOutcomeOnFalse.Types[0]),
+				NoDuplicates!(ThenOutcomeOnTrue.Types[1..$-1], ThenOutcomeOnFalse.Types[1..$-1])
+			);
+
+			alias eitherOutcome = handle!(
+				pipe!(EitherOutcome.Types[0], EitherOutcome), EitherOutcome
+			);
+		}
+
+		else {
+			alias EitherOutcome = Outcome!(
+				ThenOutcomeOnTrue.Types[0],
+				NoDuplicates!(ThenOutcomeOnTrue.Types[1..$-1], ThenOutcomeOnFalse.Types[1..$-1])
+			);
+
+			alias eitherOutcome = matchWith!EitherOutcome;
+		}
+
+		// Obviate binding since pred doesn't take any arguments.
+		static if (is(typeof(pred()))) {
+			return pred()
+				? pipe!(andThen!onTrue, eitherOutcome)(outcome)
+				: pipe!(andThen!onFalse, eitherOutcome)(outcome);
+		}
+
+		else {
+			return outcome
+				.andThen!pred
+				.handle!(
+					predResult => predResult
+						? pipe!(andThen!onTrue, eitherOutcome)(outcome)
+						: pipe!(andThen!onFalse, eitherOutcome)(outcome),
+					EitherOutcome
+				);
+		}
+	}
+}
+
+/+++/
+@nogc nothrow pure @safe unittest {
+	static struct File {}
+	static struct FileAccessErr {}
+	static struct FileNotFoundErr {}
+
+	alias FileOutcome = Outcome!(File, FileAccessErr, FileNotFoundErr);
+
+	static int countBytes(in File file) { return 32; }
+	static int countLines(in File file) { return 16; }
+
+	auto countBytesNotLines = true;
+
+	assert(
+		FileOutcome(File())
+			.andWhen!(
+				() => countBytesNotLines,
+				countBytes,
+				countLines
+			)
+			.matchWith!(
+				(uint n) => n,
+				(FileAccessErr err) => -1,
+				(FileNotFoundErr err) => -2
+			)
+			== 32
+	);
+
+	countBytesNotLines = false;
+
+	assert(
+		FileOutcome(File())
+			.andWhen!(
+				() => countBytesNotLines,
+				countBytes,
+				countLines
+			)
+			.matchWith!(
+				(uint n) => n,
+				(FileAccessErr err) => -1,
+				(FileNotFoundErr err) => -2
+			)
+			== 16
+	);
+}
+
+/+++/
+@nogc nothrow pure @safe unittest {
+	static struct File {}
+	static struct FileAccessErr {}
+	static struct FileNotFoundErr {}
+	static struct ProcessingErr {}
+
+	alias FileOutcome = Outcome!(File, FileAccessErr, FileNotFoundErr);
+
+	static Outcome!(ubyte[], ProcessingErr) processZipFile(bool fail)(in File file) {
+		return fail ? typeof(return)(ProcessingErr()) : typeof(return)(cast(ubyte[])null);
+	}
+
+	static string readMagicNumber(string magicNumber)(in File file) { return magicNumber; }
+
+	import std.sumtype: match, SumType;
+
+	assert(
+		FileOutcome(File())
+			.andWhen!(
+				file => readMagicNumber!`PK\x03\x04`(file) == `PK\x03\x04`,
+				processZipFile!false,
+				file => "Not a zip file"
+			)
+			.handle!(
+				match!(
+					(ubyte[] data) => 0,
+					(string errMsg) => 1
+				),
+				(FileAccessErr err) => 2,
+				(FileNotFoundErr err) => 3,
+				(ProcessingErr err) => 4
+			)
+			== 0
+	);
+
+	assert(
+		FileOutcome(File())
+			.andWhen!(
+				file => readMagicNumber!`PK\x03\x04`(file) == `PK\x03\x04`,
+				processZipFile!true,
+				file => "Not a zip file"
+			)
+			.handle!(
+				match!(
+					(ubyte[] data) => 0,
+					(string errMsg) => 1
+				),
+				(FileAccessErr err) => 2,
+				(FileNotFoundErr err) => 3,
+				(ProcessingErr err) => 4
+			)
+			== 4
+	);
+
+	assert(
+		FileOutcome(File())
+			.andWhen!(
+				file => readMagicNumber!`7`(file) == `PK\x03\x04`,
+				processZipFile!false,
+				file => "Not a zip file"
+			)
+			.handle!(
+				match!(
+					(ubyte[] data) => 0,
+					(string errMsg) => 1
+				),
+				(FileAccessErr err) => 2,
+				(FileNotFoundErr err) => 3,
+				(ProcessingErr err) => 4
+			)
+			== 1
+	);
+}
+
+/+++/
 template ensure(alias pred, alias onErr) {
 	/+++/
 	auto ensure(Value)(auto ref Value value) {
@@ -423,7 +423,7 @@ template ensure(alias pred, alias onErr) {
 }
 
 /+++/
-template handle(alias valueHandler, errorHandlers...) {
+template handle(alias positiveHandler, negativeHandlers...) {
 	auto ref handle(Outcome_)(auto ref Outcome_ outcome)
 	if (isOutcome!Outcome_) {
 		import std.sumtype: match;
@@ -431,8 +431,8 @@ template handle(alias valueHandler, errorHandlers...) {
 
 		return outcome.match!(
 			(Outcome_.Types[$-1] marker) => noreturn.init,
-			(ref CopyTypeQualifiers!(Outcome_, Outcome_.Types[0]) val) => valueHandler(val),
-			errorHandlers,
+			(ref CopyTypeQualifiers!(Outcome_, Outcome_.Types[0]) val) => positiveHandler(val),
+			negativeHandlers,
 		);
 	}
 }
