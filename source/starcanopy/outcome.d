@@ -7,22 +7,25 @@ module starcanopy.outcome;
 
 import std.sumtype: isSumType, SumType;
 
+/+++/
+private enum compareNegTypes(A, B) = A.stringof[0] < B.stringof[0];
+
 /++
  + Detects whether a type is an `Outcome`.
  +/
 template isOutcome(Type) {
+	import std.meta: isSorted = staticIsSorted;
 	import std.traits: Unqual;
-	enum isOutcome = isSumType!Type && is(Unqual!(Type.Types[$-1]) == OutcomeMarker);
+	enum isOutcome = isSumType!Type
+		&& isSumType!(Type.Types[1])
+		&& isSorted!(compareNegTypes, Type.Types[1].Types)
+		&& is(Unqual!(Type.Types[$-1]) == OutcomeMarker);
 }
 
 /+++/
 @nogc nothrow pure @safe unittest {
-	static struct File {}
-	static struct FileAccessErr {}
-	static struct FileNotFoundErr {}
-
-	alias Outcome_ = Outcome!(File, FileAccessErr, FileNotFoundErr);
-	alias SumType_ = SumType!(File, FileAccessErr, FileNotFoundErr);
+	alias Outcome_ = Outcome!(int, string, wstring);
+	alias SumType_ = SumType!(int, string, wstring);
 
 	static assert(isOutcome!Outcome_);
 	static assert(isSumType!Outcome_);
@@ -44,17 +47,20 @@ template isOutcome(Type) {
  +/
 template AllTypes(Outcome_, bool withQualifiers = true)
 if (isOutcome!Outcome_) {
+	import std.meta: AliasSeq;
+
 	static if (withQualifiers) {
 		import std.meta: ApplyLeft, Map = staticMap;
 		import std.traits: CopyTypeQualifiers;
 
 		alias AllTypes = Map!(
-			ApplyLeft!(CopyTypeQualifiers, Outcome_), Outcome_.Types[0..$-1]
+			ApplyLeft!(CopyTypeQualifiers, Outcome_),
+			AliasSeq!(Outcome_.Types[0], Outcome_.Types[1].Types)
 		);
 	}
 
 	else
-		alias AllTypes = Outcome_.Types[0..$-1];
+		alias AllTypes = AliasSeq!(Outcome_.Types[0], Outcome_.Types[1].Types);
 }
 
 /+++/
@@ -68,6 +74,29 @@ if (isOutcome!Outcome_) {
 }
 
 /++
+ + Resolves to the negative type wrapper of an outcome. It's a `SumType`.
+ +/
+template AnyNegative(Outcome_, bool withQualifiers = true)
+if (isOutcome!Outcome_) {
+	static if (withQualifiers) {
+		import std.traits: CopyTypeQualifiers;
+		alias AnyNegative = CopyTypeQualifiers!(Outcome_, Outcome_.Types[1]);
+	}
+	else
+		alias AnyNegative = Outcome_.Types[1];
+}
+
+/+++/
+@nogc nothrow pure @safe unittest {
+	static assert(
+		is(AnyNegative!(shared Outcome!(int, string, wstring)) == shared SumType!(string, wstring))
+	);
+	static assert(
+		is(AnyNegative!(shared Outcome!(int, string, wstring), false) == SumType!(string, wstring))
+	);
+}
+
+/++
  + A `Maybe` type implemented as an `Outcome`.
  +
  + Params:
@@ -78,7 +107,7 @@ alias Maybe(Value) = Outcome!(Value, Nothing);
 /+++/
 @nogc nothrow pure @safe unittest {
 	Maybe!int(10)
-		.matchWith!(
+		.handle!(
 			(int val) => val,
 			(Nothing _) => -1
 		)
@@ -118,16 +147,33 @@ struct Nothing {}
  + A result type
  +
  + Params:
- +	Value = The positive type that may be held.
- +	Errs  = The negative types that may be held. There must be at least one.
+ +	PositiveType  = The positive type that may be held.
+ +	NegativeTypes = The negative types that may be held. There must be at least one.
  +/
-template Outcome(Value, Errs...)
-if (Errs.length > 0) {
-	alias Outcome = SumType!(Value, Errs, OutcomeMarker);
+template Outcome(PositiveType, NegativeTypes...)
+if (NegativeTypes.length > 0) {
+	import std.meta: Sort = staticSort;
+	alias Outcome = SumType!(
+		PositiveType, SumType!(Sort!(compareNegTypes, NegativeTypes)), OutcomeMarker
+	);
+}
+
+/+++/
+@nogc nothrow pure @safe unittest {
+	// An int as a positive type and a string as the negative type.
+	static assert(__traits(compiles, Outcome!(int, string)));
+	// Ditto, except with wstring as an additional negative type.
+	static assert(__traits(compiles, Outcome!(int, string, wstring)));
+	// A negative type can be the same as the positive one.
+	static assert(__traits(compiles, Outcome!(int, int)));
+	// There cannot be two or more negative types that are identical to each other.
+	static assert(!__traits(compiles, Outcome!(int, string, string)));
+	// The order in which the negative types are passed doesn't affect the outcome type.
+	static assert(is(Outcome!(int, string, wstring) == Outcome!(int, wstring, string)));
 }
 
 /++
- + Used to distinguish `Outcome` from `SumType`.
+ + A type used to distinguish an `Outcome` from a `SumType`.
  +/
 struct OutcomeMarker {}
 
@@ -136,7 +182,7 @@ struct OutcomeMarker {}
  +
  + Params:
  +	Outcome_	   = The outcome from which to extract the type.
- +	withQualifiers = Whether to return the type with the qualifiers of `Outcome_` applied to them.
+ +	withQualifiers = Whether to return the type with the qualifiers of `Outcome_` applied to it.
  +					 The default behavior is with qualifiers.
  +/
 template PositiveType(Outcome_, bool withQualifiers = true)
@@ -156,18 +202,27 @@ if (isOutcome!Outcome_) {
 	static assert(is(PositiveType!(shared Outcome!(int, string), false) == int));
 }
 
-/+++/
+/++
+ + Matches a given function to an outcome's currently held value, and calls it.
+ +
+ + `handle` is an alias to `std.sumtype.match`, but it's designed to ignore the `OutcomeMarker`,
+ + and it correctly handles the negative types.
+ +
+ + Params:
+ +	positiveHandler  = The function that will be called if the outcome is positive. It must be able
+ +					   to take the positive value as an argument.
+ +	negativeHandlers = The functions of which one will be called if the outcome is negative and
+ +					   the negative value may be passed to it.
+ +
+ + Returns: The return value of the matched function.
+ +/
 template handle(alias positiveHandler, negativeHandlers...) {
-	auto ref handle(Outcome_)(auto ref Outcome_ outcome)
-	if (isOutcome!Outcome_) {
-		import std.sumtype: match;
-
-		return outcome.match!(
-			(Outcome_.Types[$-1] marker) => noreturn.init,
-			(ref PositiveType!Outcome_ val) => positiveHandler(val),
-			negativeHandlers,
-		);
-	}
+	import std.sumtype: match;
+	alias handle = match!(
+		(OutcomeMarker marker) => noreturn.init,
+		match!negativeHandlers,
+		positiveHandler
+	);
 }
 
 /+++/
@@ -211,18 +266,26 @@ if (isOutcome!Outcome_) {
 
 	alias FileOutcome = Outcome!(File, FileAccessErr, FileNotFoundErr);
 
-	FileOutcome(FileAccessErr()).isNegative.mustBeTrue;
-	FileOutcome(FileNotFoundErr()).isNegative.mustBeTrue;
-	FileOutcome(File()).isNegative.mustBeFalse;
+	neg!FileOutcome(FileAccessErr()).isNegative.mustBeTrue;
+	neg!FileOutcome(FileNotFoundErr()).isNegative.mustBeTrue;
+	pos!FileOutcome(File()).isNegative.mustBeFalse;
 }
 
 /+++/
 template isNegative(ExpectedErr) {
 	bool isNegative(Outcome_)(auto ref Outcome_ outcome)
 	if (isOutcome!Outcome_) {
-		return outcome.matchWith!(
+		import std.meta: AliasSeq;
+
+		static if (NegativeTypes!Outcome_.length > 1)
+			alias otherNegHandler = (in _) => false;
+		else
+			alias otherNegHandler = AliasSeq!();
+
+		return outcome.handle!(
+			(in val) => false,
 			(in ExpectedErr err) => true,
-			(in _) => false
+			otherNegHandler
 		);
 	}
 }
@@ -235,9 +298,9 @@ template isNegative(ExpectedErr) {
 
 	alias FileOutcome = Outcome!(File, FileAccessErr, FileNotFoundErr);
 
-	FileOutcome(FileAccessErr()).isNegative!FileAccessErr.mustBeTrue;
-	FileOutcome(FileNotFoundErr()).isNegative!FileNotFoundErr.mustBeTrue;
-	FileOutcome(FileAccessErr()).isNegative!FileNotFoundErr.mustBeFalse;
+	neg!FileOutcome(FileAccessErr()).isNegative!FileAccessErr.mustBeTrue;
+	neg!FileOutcome(FileNotFoundErr()).isNegative!FileNotFoundErr.mustBeTrue;
+	neg!FileOutcome(FileAccessErr()).isNegative!FileNotFoundErr.mustBeFalse;
 }
 
 /+++/
@@ -246,9 +309,17 @@ bool isNegative(Outcome_, ExpectedValue)(
 	auto ref ExpectedValue expectedValue
 )
 if (isOutcome!Outcome_) {
-	return outcome.matchWith!(
+	import std.meta: AliasSeq;
+
+	static if (NegativeTypes!Outcome_.length > 1)
+		alias otherNegHandler = (in _) => false;
+	else
+		alias otherNegHandler = AliasSeq!();
+
+	return outcome.handle!(
+		(in val) => false,
 		(in ExpectedValue err) => err == expectedValue,
-		(in _) => false
+		otherNegHandler
 	);
 }
 
@@ -256,10 +327,10 @@ if (isOutcome!Outcome_) {
 @nogc nothrow pure @safe unittest {
 	alias Outcome_ = Outcome!(int, string, wstring);
 
-	Outcome_("Error!").isNegative("Error!").mustBeTrue;
-	Outcome_("Different error!").isNegative("Error!").mustBeFalse;
-	Outcome_("Error!"w).isNegative("Error!").mustBeFalse;
-	Outcome_(10).isNegative("Error!").mustBeFalse;
+	neg!Outcome_("Error!").isNegative("Error!").mustBeTrue;
+	neg!Outcome_("Different error!").isNegative("Error!").mustBeFalse;
+	neg!Outcome_("Error!"w).isNegative("Error!").mustBeFalse;
+	pos!Outcome_(10).isNegative("Error!").mustBeFalse;
 }
 
 /+++/
@@ -279,9 +350,9 @@ if (isOutcome!Outcome_) {
 
 	alias FileOutcome = Outcome!(File, FileAccessErr, FileNotFoundErr);
 
-	FileOutcome(File()).isPositive.mustBeTrue;
-	FileOutcome(FileAccessErr()).isPositive.mustBeFalse;
-	FileOutcome(FileNotFoundErr()).isPositive.mustBeFalse;
+	pos!FileOutcome(File()).isPositive.mustBeTrue;
+	neg!FileOutcome(FileAccessErr()).isPositive.mustBeFalse;
+	neg!FileOutcome(FileNotFoundErr()).isPositive.mustBeFalse;
 }
 
 /+++/
@@ -300,23 +371,87 @@ if (isOutcome!Outcome_ && is(ExpectedValue : PositiveType!Outcome_)) {
 @nogc nothrow pure @safe unittest {
 	alias Outcome_ = Outcome!(int, float, string);
 
-	Outcome_(10).isPositive(10).mustBeTrue;
-	Outcome_(20).isPositive(10).mustBeFalse;
-	Outcome_("Error!").isPositive(10).mustBeFalse;
+	pos!Outcome_(10).isPositive(10).mustBeTrue;
+	pos!Outcome_(20).isPositive(10).mustBeFalse;
+	neg!Outcome_("Error!").isPositive(10).mustBeFalse;
 }
 
 /+++/
-template matchWith(handlers...) {
-	/+++/
-	auto ref matchWith(Outcome_)(auto ref Outcome_ outcome)
-	if (isOutcome!Outcome_) {
-		import std.sumtype: match;
+alias mapAny(alias handler) = handle!(handler, handler);
 
-		return outcome.match!(
-			(Outcome_.Types[$-1] marker) => noreturn.init,
-			handlers
-		);
+/+++/
+@nogc nothrow pure @safe unittest {
+	alias Outcome_ = Outcome!(int, string, wstring);
+
+	pos!Outcome_(10).mapAny!(any => typeof(any).stringof).mustBe("int");
+	neg!Outcome_("").mapAny!(any => typeof(any).stringof).mustBe("string");
+	neg!Outcome_(""w).mapAny!(any => typeof(any).stringof).mustBe("wstring");
+}
+
+/+++/
+template neg(Outcome_)
+if (isOutcome!Outcome_) {
+	/+++/
+	Outcome_ neg(Err)(auto ref Err err) {
+		return typeof(return)(typeof(return).Types[1](err));
 	}
+}
+
+/++
+ + Returns a negative outcome holding a specified value.
+ +
+ + Params:
+ +	PositiveType  = The positive type the returned outcome may hold.
+ +	NegativeTypes = The other negative types the returned outcome may hold.
+ +	value		  = The negative value the returned outcome will hold.
+ +/
+template neg(PositiveType, NegativeTypes...) {
+	import std.meta: NoDuplicates;
+	/+++/
+	Outcome!(PositiveType, NoDuplicates!(NegativeTypes, NegativeValue))
+	neg(NegativeValue)(auto ref NegativeValue value) {
+		return typeof(return)(typeof(return).Types[1](value));
+	}
+}
+
+/+++/
+@nogc nothrow pure @safe unittest {
+	immutable outcome1 = neg!(int, wstring)("Error!");
+	immutable outcome2 = neg!(int, string)("Error!"w);
+
+	outcome1.isNegative("Error!").mustBeTrue;
+	outcome2.isNegative("Error!"w).mustBeTrue;
+
+	static assert(is(typeof(outcome1) == typeof(outcome2)));
+}
+
+/+++/
+template pos(Outcome_)
+if (isOutcome!Outcome_) {
+	/+++/
+	Outcome_ pos(Val)(auto ref Val val) {
+		return typeof(return)(val);
+	}
+}
+
+/+++/
+template pos(Errs...) {
+	/+++/
+	Outcome!(Val, Errs) pos(Val)(auto ref Val val) {
+		return typeof(return)(val);
+	}
+}
+
+/++
+ + Assigns a negative value to an outcome.
+ +
+ + Params:
+ +	outcome = The outcome to hold the negative value.
+ +	value = The negative value to be held.
+ +/
+ref Outcome_ negate(Outcome_, NegativeValue)(ref Outcome_ outcome, auto ref NegativeValue value)
+if (isOutcome!Outcome_ && is(typeof(Outcome_.Types[1](value)))) {
+	return outcome = outcome.Types[1](value);
 }
 
 /+++/
@@ -325,25 +460,10 @@ template matchWith(handlers...) {
 	static struct FileAccessErr {}
 	static struct FileNotFoundErr {}
 
-	alias FileOutcome = Outcome!(File, FileAccessErr, FileNotFoundErr);
-
-	FileOutcome(File())
-		.matchWith!(
-			(File file) => true,
-			(FileAccessErr err) => false,
-			(FileNotFoundErr err) => false
-		)
-		.mustBeTrue;
-
-
-	FileOutcome(File())
-		.matchWith!(
-			(File file) => true,
-			err => false
-		)
-		.mustBeTrue;
-
-	FileOutcome(File()).matchWith!(any => true).mustBeTrue;
+	auto outcome = pos!(FileAccessErr, FileNotFoundErr)(File());
+	assert(outcome.isPositive);
+	outcome.negate(FileAccessErr());
+	assert(outcome.isNegative!FileAccessErr);
 }
 
 /++
@@ -372,7 +492,7 @@ template stash(Exceptions...) {
 			alias Expression_ = Expression;
 
 		alias StashOutcome = Outcome!(Expression_, NoDuplicates!(Exceptions, Exception));
-		alias wrap = e => StashOutcome(e);
+		alias wrap = e => StashOutcome(StashOutcome.Types[1](e));
 
 		try {
 			static if (is(Expression == void)) {
@@ -384,7 +504,7 @@ template stash(Exceptions...) {
 		}
 
 		catch (Exception e)
-			return e.castSwitch!(Map!(wrap, StashOutcome.Types[1..$-1]));
+			return e.castSwitch!(Map!(wrap, Exceptions, Exception));
 	}
 }
 
@@ -395,7 +515,7 @@ nothrow @safe unittest {
 	"1o"
 		.to!int
 		.stash!ConvException
-		.matchWith!(
+		.handle!(
 			(int val) => false,
 			(ConvException e) => true,
 			(Exception e) => false,
@@ -418,7 +538,7 @@ nothrow @safe unittest {
 
 	enforce(true, "I'm flying!")
 		.stash
-		.matchWith!(
+		.handle!(
 			(Nothing _) => true,
 			(Exception e) => false
 		)
@@ -426,7 +546,7 @@ nothrow @safe unittest {
 
 	enforce(false, "I'm flying!")
 		.stash
-		.matchWith!(
+		.handle!(
 			(Nothing _) => false,
 			(Exception e) => e.msg == "I'm flying!"
 		)
@@ -456,7 +576,7 @@ nothrow @safe unittest {
 
 	openFile("test", "r")
 		.stash!(FileAccessException, FileNotFoundException)
-		.matchWith!(
+		.handle!(
 			(File file) => true,
 			(FileAccessException e) => false,
 			(FileNotFoundException e) => false,
